@@ -4,21 +4,20 @@ import eventlet
 import threading
 import random
 import time
+import os
 
-# Create Socket.IO server
+# Create a Socket.IO server
 sio = socketio.Server(cors_allowed_origins='*')
 app = socketio.WSGIApp(sio)
 
-# Some demo data
+# Demo data for testing
 votes = {"A": 0, "B": 0}
 
-# Function to simulate data changes every second
+# Function to simulate live updates every second
 def update_data():
     while True:
-        # Randomly increase votes
         votes["A"] += random.randint(0, 2)
         votes["B"] += random.randint(0, 2)
-        # Push updated data to all connected clients
         sio.emit("vote_update", votes)
         time.sleep(1)
 
@@ -40,7 +39,10 @@ def disconnect(sid):
     print(f"Client disconnected: {sid}")
 
 if __name__ == "__main__":
-    # Run the simulation in a separate thread
+    # Run the simulation thread
     threading.Thread(target=update_data, daemon=True).start()
-    print("Standalone Socket.IO server running on port 5000")
-    eventlet.wsgi.server(eventlet.listen(('', 5000)), app)
+    print("Standalone Socket.IO server running...")
+
+    # Get port from Render environment variable
+    PORT = int(os.environ.get("PORT", 5000))
+    eventlet.wsgi.server(eventlet.listen(('', PORT)), app)
