@@ -1,48 +1,35 @@
-# server.py
-import socketio
-import eventlet
-import threading
+import asyncio
+import websockets
 import random
-import time
-import os
+import json
 
-# Create a Socket.IO server
-sio = socketio.Server(cors_allowed_origins='*')
-app = socketio.WSGIApp(sio)
-
-# Demo data for testing
+clients = set()
 votes = {"A": 0, "B": 0}
 
-# Function to simulate live updates every second
-def update_data():
+async def handler(websocket):
+    clients.add(websocket)
+    try:
+        await websocket.send(json.dumps(votes))  # send initial data
+        async for message in websocket:
+            data = json.loads(message)
+            candidate = data.get("candidate")
+            if candidate in votes:
+                votes[candidate] += 1
+                # Broadcast to all clients
+                websockets.broadcast(clients, json.dumps(votes))
+    finally:
+        clients.remove(websocket)
+
+async def update_votes():
     while True:
         votes["A"] += random.randint(0, 2)
         votes["B"] += random.randint(0, 2)
-        sio.emit("vote_update", votes)
-        time.sleep(1)
+        if clients:
+            websockets.broadcast(clients, json.dumps(votes))
+        await asyncio.sleep(1)
 
-# Socket.IO events
-@sio.event
-def connect(sid, environ):
-    print(f"Client connected: {sid}")
-    sio.emit("vote_update", votes, room=sid)
+async def main():
+    server = await websockets.serve(handler, "0.0.0.0", 5000)
+    await update_votes()  # runs forever
 
-@sio.event
-def vote(sid, data):
-    candidate = data.get("candidate")
-    if candidate in votes:
-        votes[candidate] += 1
-        sio.emit("vote_update", votes)
-
-@sio.event
-def disconnect(sid):
-    print(f"Client disconnected: {sid}")
-
-if __name__ == "__main__":
-    # Run the simulation thread
-    threading.Thread(target=update_data, daemon=True).start()
-    print("Standalone Socket.IO server running...")
-
-    # Get port from Render environment variable
-    PORT = int(os.environ.get("PORT", 5000))
-    eventlet.wsgi.server(eventlet.listen(('', PORT)), app)
+asyncio.run(main())
