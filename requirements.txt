@@ -1,2 +1,1 @@
-python-socketio==5.9.0
-eventlet==0.33.3
+websockets==11.1.0
