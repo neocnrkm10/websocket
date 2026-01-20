@@ -1,8 +1,14 @@
-import socketio
 import os
+import socketio
 import uvicorn
 
-sio = socketio.AsyncServer(cors_allowed_origins="*")
+# Force WebSocket-only transport
+sio = socketio.AsyncServer(
+    cors_allowed_origins="*",
+    async_mode="asgi",
+    transports=["websocket"]
+)
+
 clients = {}
 
 @sio.event
@@ -15,7 +21,7 @@ async def username(sid, data):
     name = data.get("name", f"User-{sid[:5]}")
     clients[sid] = name
     await sio.emit("message", {"user": "Server", "msg": f"{name} has joined the chat"})
-    print(f"{name} connected (SID: {sid})")
+    print(f"{name} connected")
 
 @sio.event
 async def message(sid, data):
@@ -30,9 +36,8 @@ async def disconnect(sid):
     print(f"{user} disconnected")
     await sio.emit("message", {"user": "Server", "msg": f"{user} has left the chat"})
 
-# --- run uvicorn directly, no asyncio.run ---
 if __name__ == "__main__":
-    app = socketio.ASGIApp(sio)
     port = int(os.environ.get("PORT", 5000))
-    print(f"Global Chat Server running on http://0.0.0.0:{port}")
+    print(f"Server running on http://0.0.0.0:{port}")
+    app = socketio.ASGIApp(sio)
     uvicorn.run(app, host="0.0.0.0", port=port)
