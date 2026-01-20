@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CnrTempChat</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --chat-bg: #1e1e24;
+            --primary-color: #6c5ce7;
+            --primary-hover: #5a4ad1;
+            --text-color: #ffffff;
+            --bubble-own: #6c5ce7;
+            --bubble-other: #2d2d3a;
+            --server-msg: #f1c40f;
+            --border-color: #333;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Main Container */
+        .app-container {
+            width: 100%;
+            max-width: 500px;
+            height: 90vh;
+            background-color: var(--chat-bg);
+            border-radius: 16px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+        }
+
+        /* Header */
+        header {
+            padding: 20px;
+            background-color: #23232e;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        header h2 {
+            font-size: 1.2rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-dot {
+            height: 10px;
+            width: 10px;
+            background-color: #2ecc71;
+            border-radius: 50%;
+            display: inline-block;
+            box-shadow: 0 0 5px #2ecc71;
+        }
+
+        /* Chat Area */
+        #chat {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            scrollbar-width: thin;
+            scrollbar-color: #444 transparent;
+        }
+
+        #chat::-webkit-scrollbar {
+            width: 6px;
+        }
+        #chat::-webkit-scrollbar-thumb {
+            background-color: #444;
+            border-radius: 3px;
+        }
+
+        /* Messages */
+        .message-row {
+            display: flex;
+            flex-direction: column;
+            max-width: 80%;
+        }
+
+        .message-row.own {
+            align-self: flex-end;
+            align-items: flex-end;
+        }
+
+        .message-row.other {
+            align-self: flex-start;
+            align-items: flex-start;
+        }
+
+        .username-label {
+            font-size: 0.75rem;
+            color: #888;
+            margin-bottom: 4px;
+            margin-left: 4px;
+        }
+
+        .msg-bubble {
+            padding: 10px 14px;
+            border-radius: 12px;
+            font-size: 0.95rem;
+            line-height: 1.4;
+            word-wrap: break-word;
+        }
+
+        .own .msg-bubble {
+            background-color: var(--bubble-own);
+            color: white;
+            border-bottom-right-radius: 2px;
+        }
+
+        .other .msg-bubble {
+            background-color: var(--bubble-other);
+            color: #e0e0e0;
+            border-bottom-left-radius: 2px;
+        }
+
+        .server-msg {
+            align-self: center;
+            font-size: 0.8rem;
+            color: var(--server-msg);
+            background: rgba(241, 196, 15, 0.1);
+            padding: 4px 12px;
+            border-radius: 10px;
+            margin: 10px 0;
+            text-align: center;
+        }
+
+        /* Input Area */
+        .input-area {
+            padding: 15px;
+            background-color: #23232e;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            gap: 10px;
+        }
+
+        #msg {
+            flex: 1;
+            padding: 12px 15px;
+            border-radius: 25px;
+            border: 1px solid var(--border-color);
+            background-color: #16161a;
+            color: white;
+            outline: none;
+            font-family: inherit;
+            transition: border-color 0.2s;
+        }
+
+        #msg:focus {
+            border-color: var(--primary-color);
+        }
+
+        #sendBtn {
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            border: none;
+            background-color: var(--primary-color);
+            color: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+
+        #sendBtn:hover {
+            background-color: var(--primary-hover);
+        }
+
+        #sendBtn:active {
+            transform: scale(0.95);
+        }
+
+        /* SVG Icon for Send */
+        .icon {
+            width: 20px;
+            height: 20px;
+            fill: currentColor;
+            margin-left: 2px; /* slight visual center adjust */
+        }
+    </style>
+</head>
+<body>
+
+    <div class="app-container">
+        <header>
+            <h2><span class="status-dot"></span> CnrTempChat</h2>
+        </header>
+
+        <div id="chat">
+            </div>
+
+        <div class="input-area">
+            <input id="msg" type="text" placeholder="Type a message..." autocomplete="off">
+            <button id="sendBtn">
+                <svg class="icon" viewBox="0 0 24 24">
+                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // 🚀 Connect to your Render Socket.IO server
+        const socket = io("https://chatsocket-6koy.onrender.com/", {
+            transports: ["websocket"] 
+        });
+
+        const chatDiv = document.getElementById("chat");
+        const msgInput = document.getElementById("msg");
+        const sendBtn = document.getElementById("sendBtn");
+
+        let username = "";
+
+        // 📌 Ask for username when server requests it
+        socket.on("request_username", () => {
+            username = prompt("Enter your name to join CnrTempChat:");
+            if (!username) username = `Guest_${Math.floor(Math.random() * 1000)}`;
+            socket.emit("username", { name: username });
+        });
+
+        // 📨 Receive messages from server
+        socket.on("message", (data) => {
+            const isMe = data.user === username;
+            
+            // Create wrapper div
+            const msgRow = document.createElement("div");
+
+            // Handle Server Messages (System alerts)
+            if (data.user === "Server") {
+                msgRow.classList.add("server-msg");
+                msgRow.textContent = data.msg;
+            } else {
+                // Handle User Messages
+                msgRow.classList.add("message-row");
+                msgRow.classList.add(isMe ? "own" : "other");
+
+                let contentHtml = "";
+                
+                // Only show username if it's NOT me
+                if (!isMe) {
+                    contentHtml += `<span class="username-label">${data.user}</span>`;
+                }
+                
+                contentHtml += `<div class="msg-bubble">${data.msg}</div>`;
+                msgRow.innerHTML = contentHtml;
+            }
+
+            chatDiv.appendChild(msgRow);
+            chatDiv.scrollTop = chatDiv.scrollHeight; // auto scroll to bottom
+        });
+
+        // ✉️ Send message logic
+        function sendMessage() {
+            const msg = msgInput.value.trim();
+            if (msg) {
+                socket.emit("message", { msg: msg });
+                msgInput.value = "";
+                msgInput.focus();
+            }
+        }
+
+        sendBtn.addEventListener("click", sendMessage);
+
+        // ↵ Send on Enter key
+        msgInput.addEventListener("keyup", (e) => {
+            if (e.key === "Enter") sendMessage();
+        });
+
+        socket.on("connect_error", (err) => {
+            console.error("Connection error:", err.message);
+            const errDiv = document.createElement("div");
+            errDiv.classList.add("server-msg");
+            errDiv.style.color = "#e74c3c";
+            errDiv.textContent = "Connection lost. Reconnecting...";
+            chatDiv.appendChild(errDiv);
+        });
+    </script>
+</body>
+</html>
