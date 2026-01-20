@@ -1,1 +1,2 @@
-websockets==11.0.3
+python-socketio[asyncio_server]==5.3.0
+uvicorn==0.23.2
