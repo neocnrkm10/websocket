@@ -1,93 +1,93 @@
 import os
 import socketio
 import uvicorn
-import base64
+import secrets
 
-sio = socketio.AsyncServer(cors_allowed_origins="*", async_mode="asgi", transports=["websocket"])
+# Initialize Server
+sio = socketio.AsyncServer(
+    cors_allowed_origins="*",
+    async_mode="asgi",
+    transports=["websocket", "polling"]
+)
 
-# {sid: {"username": str, "room": str}}
+# State Storage
+rooms = {}
 clients = {}
+
+def generate_room_id():
+    return secrets.token_urlsafe(4)
 
 @sio.event
 async def connect(sid, environ):
-    print(f"{sid} connected")
+    print(f"Client connected: {sid}")
 
 @sio.event
 async def join_room(sid, data):
-    room = data.get("room")
-    username = data.get("username", f"User-{sid[:5]}")
-
+    # Handle both creating and joining in one logic block for simplicity
+    room_id = data.get("room") or generate_room_id()
+    username = data.get("username", f"User-{sid[:4]}")
+    
     # Register client
-    clients[sid] = {"username": username, "room": room}
-    await sio.enter_room(sid, room)
-
-    await sio.emit("message", {"user": "Server", "msg": f"{username} joined the room"}, room=room)
-    print(f"{username} joined room {room}")
+    clients[sid] = {"username": username, "room": room_id}
+    
+    # Initialize room if not exists
+    if room_id not in rooms:
+        rooms[room_id] = {"users": set()}
+    
+    rooms[room_id]["users"].add(sid)
+    
+    await sio.enter_room(sid, room_id)
+    
+    # 1. Tell the user they are in
+    await sio.emit("joined_success", {"room": room_id, "username": username}, to=sid)
+    
+    # 2. Tell everyone else "X joined"
+    await sio.emit("message", {
+        "user": "Server",
+        "type": "system",
+        "content": f"🔵 {username} entered the chat."
+    }, room=room_id)
 
 @sio.event
 async def message(sid, data):
-    client = clients.get(sid)
-    if not client: return
-
-    room = client["room"]
-    username = client["username"]
-    msg = data.get("msg", "")
-    await sio.emit("message", {"user": username, "msg": msg}, room=room)
-    print(f"[{room}] {username}: {msg}")
-
-@sio.event
-async def image(sid, data):
-    """
-    Expects: data = {"img": base64_string}
-    """
-    client = clients.get(sid)
-    if not client: return
-
-    room = client["room"]
-    username = client["username"]
-    await sio.emit("image", {"user": username, "img": data["img"]}, room=room)
-    print(f"[{room}] {username} sent an image")
-
-@sio.event
-async def voice(sid, data):
-    """
-    Expects: data = {"voice": base64_string}
-    """
-    client = clients.get(sid)
-    if not client: return
-
-    room = client["room"]
-    username = client["username"]
-    await sio.emit("voice", {"user": username, "voice": data["voice"]}, room=room)
-    print(f"[{room}] {username} sent a voice message")
-
-@sio.event
-async def react(sid, data):
-    """
-    Expects: data = {"reaction": "👍"} or any emoji
-    """
-    client = clients.get(sid)
-    if not client: return
-
-    room = client["room"]
-    username = client["username"]
-    reaction = data.get("reaction", "")
-    await sio.emit("reaction", {"user": username, "reaction": reaction}, room=room)
-    print(f"[{room}] {username} reacted: {reaction}")
+    # Relay message to room
+    if sid not in clients: return
+    room = clients[sid]["room"]
+    username = clients[sid]["username"]
+    
+    # Data is expected to be a dict: { "content": "hello", "type": "text", "replyTo": ... }
+    # We construct the final payload to broadcast
+    payload = {
+        "user": username,
+        "type": data.get("type", "text"),
+        "content": data.get("content", ""),
+        "replyTo": data.get("replyTo", None),
+        "id": data.get("id", secrets.token_hex(4))
+    }
+    
+    await sio.emit("message", payload, room=room)
 
 @sio.event
 async def disconnect(sid):
-    client = clients.pop(sid, None)
-    if client:
-        room = client["room"]
-        username = client["username"]
-        await sio.emit("message", {"user": "Server", "msg": f"{username} left the room"}, room=room)
-        print(f"{username} disconnected from room {room}")
-    else:
-        print(f"{sid} disconnected but was not in clients")
+    if sid in clients:
+        room = clients[sid]["room"]
+        username = clients[sid]["username"]
+        
+        # Cleanup
+        if room in rooms:
+            rooms[room]["users"].discard(sid)
+            if len(rooms[room]["users"]) == 0:
+                del rooms[room]
+        
+        del clients[sid]
+        
+        # Notify room
+        await sio.emit("message", {
+            "user": "Server",
+            "type": "system",
+            "content": f"🔴 {username} left the chat."
+        }, room=room)
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    print(f"Server running on http://0.0.0.0:{port}")
     app = socketio.ASGIApp(sio)
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=5000)
